@@ -30,6 +30,12 @@ const Navigation = () => {
             >
               Dashboard
             </Button>
+            <Button
+              variant={location.pathname === '/vendas' ? 'default' : 'ghost'}
+              onClick={() => navigate('/vendas')}
+            >
+              Dashboard de Vendas
+            </Button>
           </div>
         </div>
       </div>
