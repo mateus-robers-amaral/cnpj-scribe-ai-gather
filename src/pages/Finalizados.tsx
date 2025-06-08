@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, ArrowUpDown } from 'lucide-react';
+import LeadDetailModal from '@/components/LeadDetailModal';
 
 interface Finalizado {
   id: string | null;
@@ -20,6 +20,32 @@ interface Finalizado {
   };
 }
 
+interface DetailedLead {
+  id: string;
+  nome_fantasia: string;
+  cnpj: string;
+  telefone: string | null;
+  endereco: string | null;
+  status: string | null;
+  data_criacao: string | null;
+  validacoes: Array<{
+    id: string;
+    resultado: string | null;
+    credibilidade: number | null;
+    cnaes_compatíveis: boolean | null;
+    data_validacao: string | null;
+  }>;
+  negociacoes: Array<{
+    id: string;
+    status: string | null;
+    data_status: string | null;
+  }>;
+  finalizados: Array<{
+    id: string;
+    data_ultima_compra: string | null;
+  }>;
+}
+
 const Finalizados = () => {
   const [finalizados, setFinalizados] = useState<Finalizado[]>([]);
   const [filteredFinalizados, setFilteredFinalizados] = useState<Finalizado[]>([]);
@@ -29,6 +55,8 @@ const Finalizados = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
+  const [selectedLead, setSelectedLead] = useState<DetailedLead | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchFinalizados = async () => {
@@ -68,6 +96,54 @@ const Finalizados = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchLeadDetails = async (leadId: string) => {
+    try {
+      const { data: leadData, error: leadError } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .single();
+
+      if (leadError) throw leadError;
+
+      const { data: validacoes, error: validacoesError } = await supabase
+        .from('validacoes')
+        .select('*')
+        .eq('lead_id', leadId);
+
+      const { data: negociacoes, error: negociacoesError } = await supabase
+        .from('negociacoes')
+        .select('*')
+        .eq('lead_id', leadId);
+
+      const { data: finalizados, error: finalizadosError } = await supabase
+        .from('finalizados')
+        .select('*')
+        .eq('lead_id', leadId);
+
+      if (validacoesError) throw validacoesError;
+      if (negociacoesError) throw negociacoesError;
+      if (finalizadosError) throw finalizadosError;
+
+      const leadDetails: DetailedLead = {
+        ...leadData,
+        validacoes: validacoes || [],
+        negociacoes: negociacoes || [],
+        finalizados: finalizados || [],
+      };
+
+      setSelectedLead(leadDetails);
+      setIsModalOpen(true);
+    } catch (error) {
+      console.error('Error fetching lead details:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar detalhes do lead.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -188,7 +264,11 @@ const Finalizados = () => {
                 </TableHeader>
                 <TableBody>
                   {paginatedFinalizados.map((finalizado, index) => (
-                    <TableRow key={finalizado.id || `finalizado-${index}`}>
+                    <TableRow 
+                      key={finalizado.id || `finalizado-${index}`}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => finalizado.lead_id && fetchLeadDetails(finalizado.lead_id)}
+                    >
                       <TableCell className="font-medium">
                         {finalizado.leads?.nome_fantasia || 'Empresa não encontrada'}
                       </TableCell>
@@ -254,6 +334,12 @@ const Finalizados = () => {
             )}
           </CardContent>
         </Card>
+
+        <LeadDetailModal 
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          lead={selectedLead}
+        />
       </div>
     </div>
   );

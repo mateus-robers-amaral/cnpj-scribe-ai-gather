@@ -1,13 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, ArrowUpDown } from 'lucide-react';
+import { Loader2, ArrowUpDown, ArrowRight } from 'lucide-react';
+import LeadDetailModal from '@/components/LeadDetailModal';
 
 interface Negociacao {
   id: string;
@@ -20,6 +21,32 @@ interface Negociacao {
   };
 }
 
+interface DetailedLead {
+  id: string;
+  nome_fantasia: string;
+  cnpj: string;
+  telefone: string | null;
+  endereco: string | null;
+  status: string | null;
+  data_criacao: string | null;
+  validacoes: Array<{
+    id: string;
+    resultado: string | null;
+    credibilidade: number | null;
+    cnaes_compatíveis: boolean | null;
+    data_validacao: string | null;
+  }>;
+  negociacoes: Array<{
+    id: string;
+    status: string | null;
+    data_status: string | null;
+  }>;
+  finalizados: Array<{
+    id: string;
+    data_ultima_compra: string | null;
+  }>;
+}
+
 const Negociando = () => {
   const [negociacoes, setNegociacoes] = useState<Negociacao[]>([]);
   const [filteredNegociacoes, setFilteredNegociacoes] = useState<Negociacao[]>([]);
@@ -29,6 +56,8 @@ const Negociando = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
+  const [selectedLead, setSelectedLead] = useState<DetailedLead | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchNegociacoes = async () => {
@@ -58,6 +87,82 @@ const Negociando = () => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchLeadDetails = async (leadId: string) => {
+    try {
+      const { data: leadData, error: leadError } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('id', leadId)
+        .single();
+
+      if (leadError) throw leadError;
+
+      const { data: validacoes, error: validacoesError } = await supabase
+        .from('validacoes')
+        .select('*')
+        .eq('lead_id', leadId);
+
+      const { data: negociacoes, error: negociacoesError } = await supabase
+        .from('negociacoes')
+        .select('*')
+        .eq('lead_id', leadId);
+
+      const { data: finalizados, error: finalizadosError } = await supabase
+        .from('finalizados')
+        .select('*')
+        .eq('lead_id', leadId);
+
+      if (validacoesError) throw validacoesError;
+      if (negociacoesError) throw negociacoesError;
+      if (finalizadosError) throw finalizadosError;
+
+      const leadDetails: DetailedLead = {
+        ...leadData,
+        validacoes: validacoes || [],
+        negociacoes: negociacoes || [],
+        finalizados: finalizados || [],
+      };
+
+      setSelectedLead(leadDetails);
+      setIsModalOpen(true);
+    } catch (error) {
+      console.error('Error fetching lead details:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar detalhes do lead.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const moveToFinalizado = async (leadId: string) => {
+    try {
+      const { error } = await supabase
+        .from('finalizados')
+        .insert({
+          lead_id: leadId,
+          data_ultima_compra: new Date().toISOString().split('T')[0] // Today's date in YYYY-MM-DD format
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Sucesso",
+        description: "Lead movido para finalizados com sucesso!",
+      });
+
+      // Refresh the negotiations list
+      fetchNegociacoes();
+    } catch (error) {
+      console.error('Error moving lead to finalized:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao mover lead para finalizados.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -164,11 +269,16 @@ const Negociando = () => {
                         <ArrowUpDown className="h-4 w-4" />
                       </Button>
                     </TableHead>
+                    <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedNegociacoes.map((negociacao) => (
-                    <TableRow key={negociacao.id}>
+                    <TableRow 
+                      key={negociacao.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => negociacao.lead_id && fetchLeadDetails(negociacao.lead_id)}
+                    >
                       <TableCell className="font-medium">
                         {negociacao.leads?.nome_fantasia || 'Empresa não encontrada'}
                       </TableCell>
@@ -196,6 +306,37 @@ const Negociando = () => {
                           ? new Date(negociacao.data_status).toLocaleDateString('pt-BR')
                           : '-'
                         }
+                      </TableCell>
+                      <TableCell>
+                        {negociacao.lead_id && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ArrowRight className="h-4 w-4 mr-1" />
+                                Finalizar
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Finalizar Negociação</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Tem certeza que deseja finalizar esta negociação?
+                                  Isto criará uma nova entrada na tabela de finalizados.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => moveToFinalizado(negociacao.lead_id!)}>
+                                  Confirmar
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -242,6 +383,12 @@ const Negociando = () => {
             )}
           </CardContent>
         </Card>
+
+        <LeadDetailModal 
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          lead={selectedLead}
+        />
       </div>
     </div>
   );

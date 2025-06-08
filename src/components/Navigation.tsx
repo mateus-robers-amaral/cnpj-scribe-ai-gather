@@ -40,7 +40,7 @@ const Navigation = () => {
               variant={location.pathname === '/vendas' ? 'default' : 'ghost'}
               onClick={() => navigate('/vendas')}
             >
-              Dashboard de Vendas
+              Home
             </Button>
           </div>
         </div>
