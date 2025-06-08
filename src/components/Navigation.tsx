@@ -19,16 +19,22 @@ const Navigation = () => {
               Cadastrar Leads
             </Button>
             <Button
-              variant={location.pathname === '/gerenciar' ? 'default' : 'ghost'}
-              onClick={() => navigate('/gerenciar')}
+              variant={location.pathname === '/leads' ? 'default' : 'ghost'}
+              onClick={() => navigate('/leads')}
             >
-              Gerenciar Leads
+              Leads
             </Button>
             <Button
-              variant={location.pathname === '/dashboard' ? 'default' : 'ghost'}
-              onClick={() => navigate('/dashboard')}
+              variant={location.pathname === '/negociando' ? 'default' : 'ghost'}
+              onClick={() => navigate('/negociando')}
             >
-              Dashboard
+              Negociando
+            </Button>
+            <Button
+              variant={location.pathname === '/finalizados' ? 'default' : 'ghost'}
+              onClick={() => navigate('/finalizados')}
+            >
+              Finalizados
             </Button>
             <Button
               variant={location.pathname === '/vendas' ? 'default' : 'ghost'}
