@@ -138,20 +138,29 @@ const Negociando = () => {
     }
   };
 
-  const moveToFinalizado = async (leadId: string) => {
+  const moveToFinalizado = async (leadId: string, negociacaoId: string) => {
     try {
-      const { error } = await supabase
+      // First insert into finalizados
+      const { error: insertError } = await supabase
         .from('finalizados')
         .insert({
           lead_id: leadId,
           data_ultima_compra: new Date().toISOString().split('T')[0] // Today's date in YYYY-MM-DD format
         });
 
-      if (error) throw error;
+      if (insertError) throw insertError;
+
+      // If insert was successful, remove from negociacoes table
+      const { error: deleteError } = await supabase
+        .from('negociacoes')
+        .delete()
+        .eq('id', negociacaoId);
+
+      if (deleteError) throw deleteError;
 
       toast({
         title: "Sucesso",
-        description: "Lead movido para finalizados com sucesso!",
+        description: "Negociação finalizada com sucesso!",
       });
 
       // Refresh the negotiations list
@@ -160,7 +169,7 @@ const Negociando = () => {
       console.error('Error moving lead to finalized:', error);
       toast({
         title: "Erro",
-        description: "Erro ao mover lead para finalizados.",
+        description: "Erro ao finalizar negociação.",
         variant: "destructive",
       });
     }
@@ -325,12 +334,12 @@ const Negociando = () => {
                                 <AlertDialogTitle>Finalizar Negociação</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   Tem certeza que deseja finalizar esta negociação?
-                                  Isto criará uma nova entrada na tabela de finalizados.
+                                  A negociação será removida desta lista e adicionada aos finalizados.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => moveToFinalizado(negociacao.lead_id!)}>
+                                <AlertDialogAction onClick={() => moveToFinalizado(negociacao.lead_id!, negociacao.id)}>
                                   Confirmar
                                 </AlertDialogAction>
                               </AlertDialogFooter>

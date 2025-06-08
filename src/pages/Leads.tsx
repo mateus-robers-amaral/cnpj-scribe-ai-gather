@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -126,7 +127,8 @@ const Leads = () => {
 
   const moveToNegociacao = async (leadId: string) => {
     try {
-      const { error } = await supabase
+      // Start a transaction by inserting into negociacoes first
+      const { error: insertError } = await supabase
         .from('negociacoes')
         .insert({
           lead_id: leadId,
@@ -134,7 +136,15 @@ const Leads = () => {
           data_status: new Date().toISOString()
         });
 
-      if (error) throw error;
+      if (insertError) throw insertError;
+
+      // If insert was successful, remove from leads table
+      const { error: deleteError } = await supabase
+        .from('leads')
+        .delete()
+        .eq('id', leadId);
+
+      if (deleteError) throw deleteError;
 
       toast({
         title: "Sucesso",
@@ -309,7 +319,7 @@ const Leads = () => {
                               <AlertDialogTitle>Mover para Negociação</AlertDialogTitle>
                               <AlertDialogDescription>
                                 Tem certeza que deseja mover este lead para a fase de negociação?
-                                Isto criará uma nova entrada na tabela de negociações.
+                                O lead será removido da lista de leads e adicionado às negociações.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
