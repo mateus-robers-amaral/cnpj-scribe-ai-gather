@@ -10,18 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2, ArrowUpDown, ArrowRight } from 'lucide-react';
 import LeadDetailModal from '@/components/LeadDetailModal';
 
-interface Negociacao {
-  id: string;
-  lead_id: string | null;
-  status: string | null;
-  data_status: string | null;
-  leads?: {
-    nome_fantasia: string;
-    cnpj: string;
-  };
-}
-
-interface DetailedLead {
+interface Lead {
   id: string;
   nome_fantasia: string;
   cnpj: string;
@@ -29,22 +18,33 @@ interface DetailedLead {
   endereco: string | null;
   status: string | null;
   data_criacao: string | null;
-  validacoes: Array<{
-    id: string;
-    resultado: string | null;
-    credibilidade: number | null;
-    cnaes_compatíveis: boolean | null;
-    data_validacao: string | null;
-  }>;
-  negociacoes: Array<{
-    id: string;
-    status: string | null;
-    data_status: string | null;
-  }>;
-  finalizados: Array<{
-    id: string;
-    data_ultima_compra: string | null;
-  }>;
+}
+
+interface Validacao {
+  id: string;
+  resultado: string | null;
+  credibilidade: number | null;
+  cnaes_compatíveis: boolean | null;
+  data_validacao: string | null;
+}
+
+interface Negociacao {
+  id: string;
+  lead_id: string;
+  status: string | null;
+  data_status: string | null;
+  leads?: Lead;
+}
+
+interface Finalizado {
+  id: string;
+  data_ultima_compra: string | null;
+}
+
+interface DetailedLead extends Lead {
+  validacoes: Validacao[];
+  negociacoes: Negociacao[];
+  finalizados: Finalizado[];
 }
 
 const Negociando = () => {
@@ -64,29 +64,19 @@ const Negociando = () => {
     try {
       const { data, error } = await supabase
         .from('negociacoes')
-        .select(`
-          *,
-          leads (
-            nome_fantasia,
-            cnpj
-          )
-        `)
+        .select(`*, leads:lead_id (id, nome_fantasia, cnpj, telefone, endereco, status, data_criacao)`)
         .order('data_status', { ascending: sortOrder === 'asc' });
 
-      if (error) {
-        throw error;
-      }
-
+      if (error) throw error;
       setNegociacoes(data || []);
-    } catch (error) {
-      console.error('Error fetching negociacoes:', error);
-      toast({
-        title: "Erro",
-        description: "Erro ao carregar negociações. Tente novamente.",
-        variant: "destructive",
-      });
-    } finally {
       setIsLoading(false);
+    } catch (error: unknown) {
+      const typedError = error as { message?: string };
+      toast({
+        title: 'Erro',
+        description: typedError.message || 'Erro ao carregar negociações.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -100,57 +90,45 @@ const Negociando = () => {
 
       if (leadError) throw leadError;
 
-      const { data: validacoes, error: validacoesError } = await supabase
-        .from('validacoes')
-        .select('*')
-        .eq('lead_id', leadId);
-
-      const { data: negociacoes, error: negociacoesError } = await supabase
-        .from('negociacoes')
-        .select('*')
-        .eq('lead_id', leadId);
-
-      const { data: finalizados, error: finalizadosError } = await supabase
-        .from('finalizados')
-        .select('*')
-        .eq('lead_id', leadId);
-
-      if (validacoesError) throw validacoesError;
-      if (negociacoesError) throw negociacoesError;
-      if (finalizadosError) throw finalizadosError;
+      const { data: validacoes } = await supabase.from('validacoes').select('*').eq('lead_id', leadId);
+      const { data: negociacoesData } = await supabase.from('negociacoes').select('*').eq('lead_id', leadId);
+      const { data: finalizados } = await supabase.from('finalizados').select('*').eq('lead_id', leadId);
 
       const leadDetails: DetailedLead = {
         ...leadData,
         validacoes: validacoes || [],
-        negociacoes: negociacoes || [],
+        negociacoes: negociacoesData || [],
         finalizados: finalizados || [],
       };
 
       setSelectedLead(leadDetails);
       setIsModalOpen(true);
     } catch (error) {
-      console.error('Error fetching lead details:', error);
-      toast({
-        title: "Erro",
-        description: "Erro ao carregar detalhes do lead.",
-        variant: "destructive",
-      });
+      console.error('Erro ao buscar detalhes do lead:', error);
     }
   };
 
   const moveToFinalizado = async (leadId: string, negociacaoId: string) => {
     try {
-      // First insert into finalizados
+      // 1. Insere em finalizados
       const { error: insertError } = await supabase
         .from('finalizados')
         .insert({
           lead_id: leadId,
-          data_ultima_compra: new Date().toISOString().split('T')[0] // Today's date in YYYY-MM-DD format
+          data_ultima_compra: new Date().toISOString().split('T')[0],
         });
 
       if (insertError) throw insertError;
 
-      // If insert was successful, remove from negociacoes table
+      // 2. Atualiza status do lead
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({ status: 'finalizado' })
+        .eq('id', leadId);
+
+      if (updateError) throw updateError;
+
+      // 3. Remove da tabela de negociações
       const { error: deleteError } = await supabase
         .from('negociacoes')
         .delete()
@@ -158,19 +136,18 @@ const Negociando = () => {
 
       if (deleteError) throw deleteError;
 
+      // 4. Feedback
       toast({
-        title: "Sucesso",
-        description: "Negociação finalizada com sucesso!",
+        title: 'Sucesso',
+        description: 'Negociação finalizada com sucesso!',
       });
 
-      // Refresh the negotiations list
       fetchNegociacoes();
     } catch (error) {
-      console.error('Error moving lead to finalized:', error);
       toast({
-        title: "Erro",
-        description: "Erro ao finalizar negociação.",
-        variant: "destructive",
+        title: 'Erro',
+        description: 'Erro ao finalizar negociação.',
+        variant: 'destructive',
       });
     }
   };
@@ -183,14 +160,13 @@ const Negociando = () => {
     let filtered = negociacoes;
 
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(neg => neg.status === statusFilter);
+      filtered = filtered.filter((neg) => neg.status === statusFilter);
     }
 
     if (searchTerm) {
-      filtered = filtered.filter(neg => 
+      filtered = filtered.filter((neg) =>
         neg.leads?.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        neg.leads?.cnpj.includes(searchTerm) ||
-        (neg.lead_id && neg.lead_id.includes(searchTerm))
+        neg.leads?.cnpj.includes(searchTerm)
       );
     }
 
@@ -205,13 +181,11 @@ const Negociando = () => {
 
   const totalPages = Math.ceil(filteredNegociacoes.length / itemsPerPage);
 
-  const handleSortToggle = () => {
-    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-  };
+  const handleSortToggle = () => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background p-4 flex items-center justify-center">
+      <div className="min-h-screen flex justify-center items-center">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
@@ -222,9 +196,7 @@ const Negociando = () => {
       <div className="container mx-auto py-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-4">Negociações</h1>
-          <p className="text-xl text-muted-foreground">
-            Acompanhe todas as negociações em andamento
-          </p>
+          <p className="text-xl text-muted-foreground">Acompanhe todas as negociações em andamento</p>
         </div>
 
         <Card>
@@ -236,7 +208,6 @@ const Negociando = () => {
                   {filteredNegociacoes.length} de {negociacoes.length} negociações
                 </CardDescription>
               </div>
-              
               <div className="flex flex-col sm:flex-row gap-4">
                 <Input
                   placeholder="Buscar por empresa ou CNPJ..."
@@ -244,7 +215,6 @@ const Negociando = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full sm:w-80"
                 />
-                
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-full sm:w-48">
                     <SelectValue placeholder="Status" />
@@ -258,7 +228,6 @@ const Negociando = () => {
               </div>
             </div>
           </CardHeader>
-          
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
@@ -266,14 +235,9 @@ const Negociando = () => {
                   <TableRow>
                     <TableHead>Empresa</TableHead>
                     <TableHead>CNPJ</TableHead>
-                    <TableHead>Lead ID</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>
-                      <Button
-                        variant="ghost"
-                        onClick={handleSortToggle}
-                        className="flex items-center gap-2 p-0 h-auto"
-                      >
+                      <Button variant="ghost" onClick={handleSortToggle} className="flex items-center gap-2 p-0 h-auto">
                         Data do Status
                         <ArrowUpDown className="h-4 w-4" />
                       </Button>
@@ -282,78 +246,61 @@ const Negociando = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedNegociacoes.map((negociacao) => (
-                    <TableRow 
-                      key={negociacao.id}
+                  {paginatedNegociacoes.map((neg) => (
+                    <TableRow
+                      key={neg.id}
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => negociacao.lead_id && fetchLeadDetails(negociacao.lead_id)}
+                      onClick={() => fetchLeadDetails(neg.lead_id)}
                     >
-                      <TableCell className="font-medium">
-                        {negociacao.leads?.nome_fantasia || 'Empresa não encontrada'}
-                      </TableCell>
+                      <TableCell>{neg.leads?.nome_fantasia || '-'}</TableCell>
+                      <TableCell>{neg.leads?.cnpj || '-'}</TableCell>
                       <TableCell>
-                        {negociacao.leads?.cnpj || '-'}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {negociacao.lead_id || '-'}
-                      </TableCell>
-                      <TableCell>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          negociacao.status === 'tabela_enviada' 
-                            ? 'bg-purple-100 text-purple-800' 
-                            : negociacao.status === 'resposta_obtida'
-                            ? 'bg-orange-100 text-orange-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {negociacao.status === 'tabela_enviada' ? 'Tabela Enviada' : 
-                           negociacao.status === 'resposta_obtida' ? 'Resposta Obtida' : 
-                           negociacao.status || 'Indefinido'}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${neg.status === 'tabela_enviada'
+                            ? 'bg-purple-100 text-purple-800'
+                            : neg.status === 'resposta_obtida'
+                              ? 'bg-orange-100 text-orange-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                          {neg.status || 'Indefinido'}
                         </span>
                       </TableCell>
                       <TableCell>
-                        {negociacao.data_status 
-                          ? new Date(negociacao.data_status).toLocaleDateString('pt-BR')
-                          : '-'
-                        }
+                        {neg.data_status ? new Date(neg.data_status).toLocaleDateString('pt-BR') : '-'}
                       </TableCell>
                       <TableCell>
-                        {negociacao.lead_id && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={(e) => e.stopPropagation()}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="outline" onClick={(e) => e.stopPropagation()}>
+                              <ArrowRight className="h-4 w-4 mr-1" />
+                              Finalizar
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Finalizar Negociação</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Tem certeza que deseja finalizar esta negociação? Ela será movida para finalizados.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveToFinalizado(neg.lead_id, neg.id);
+                                }}
                               >
-                                <ArrowRight className="h-4 w-4 mr-1" />
-                                Finalizar
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Finalizar Negociação</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Tem certeza que deseja finalizar esta negociação?
-                                  A negociação será removida desta lista e adicionada aos finalizados.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => moveToFinalizado(negociacao.lead_id!, negociacao.id)}>
-                                  Confirmar
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
+                                Confirmar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
-
-            {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-6">
                 <p className="text-sm text-muted-foreground">
@@ -379,21 +326,15 @@ const Negociando = () => {
                 </div>
               </div>
             )}
-
             {filteredNegociacoes.length === 0 && (
               <div className="text-center py-8">
-                <p className="text-muted-foreground">
-                  {searchTerm || statusFilter !== 'all' 
-                    ? 'Nenhuma negociação encontrada com os filtros aplicados.' 
-                    : 'Nenhuma negociação encontrada.'
-                  }
-                </p>
+                <p className="text-muted-foreground">Nenhuma negociação encontrada.</p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <LeadDetailModal 
+        <LeadDetailModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           lead={selectedLead}

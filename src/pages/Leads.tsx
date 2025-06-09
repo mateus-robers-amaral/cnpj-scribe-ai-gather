@@ -58,18 +58,18 @@ const Leads = () => {
       const { data, error } = await supabase
         .from('leads')
         .select('*')
+        .not('status', 'in', '(em_negociacao,finalizado)')
         .order('data_criacao', { ascending: sortOrder === 'asc' });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setLeads(data || []);
-    } catch (error) {
-      console.error('Error fetching leads:', error);
+    } catch (error: unknown) {
+      const typedError = error as { message?: string };
+      console.error('Erro ao carregar leads:', typedError);
       toast({
         title: "Erro",
-        description: "Erro ao carregar leads. Tente novamente.",
+        description: typedError.message || "Erro ao carregar leads. Tente novamente.",
         variant: "destructive",
       });
     } finally {
@@ -127,38 +127,39 @@ const Leads = () => {
 
   const moveToNegociacao = async (leadId: string) => {
     try {
-      // Start a transaction by inserting into negociacoes first
+      // Atualiza o status no Supabase (sem deletar o lead)
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({ status: 'em_negociacao' })
+        .eq('id', leadId);
+
+      if (updateError) throw updateError;
+
+      // Insere o registro em 'negociacoes'
       const { error: insertError } = await supabase
         .from('negociacoes')
         .insert({
           lead_id: leadId,
           status: 'tabela_enviada',
-          data_status: new Date().toISOString()
+          data_status: new Date().toISOString(),
         });
 
       if (insertError) throw insertError;
 
-      // If insert was successful, remove from leads table
-      const { error: deleteError } = await supabase
-        .from('leads')
-        .delete()
-        .eq('id', leadId);
-
-      if (deleteError) throw deleteError;
-
       toast({
-        title: "Sucesso",
-        description: "Lead movido para negociação com sucesso!",
+        title: 'Sucesso',
+        description: 'Lead movido para negociação com sucesso!',
       });
 
-      // Refresh the leads list
-      fetchLeads();
-    } catch (error) {
-      console.error('Error moving lead to negotiation:', error);
+      // Atualiza lista visual
+      setLeads((prev) => prev.filter((l) => l.id !== leadId));
+    } catch (error: unknown) {
+      const typedError = error as { message?: string };
+      console.error('Erro ao mover lead para negociação:', typedError);
       toast({
-        title: "Erro",
-        description: "Erro ao mover lead para negociação.",
-        variant: "destructive",
+        title: 'Erro',
+        description: typedError.message || 'Erro ao mover lead para negociação.',
+        variant: 'destructive',
       });
     }
   };
@@ -175,7 +176,7 @@ const Leads = () => {
     }
 
     if (searchTerm) {
-      filtered = filtered.filter(lead => 
+      filtered = filtered.filter(lead =>
         lead.nome_fantasia.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.cnpj.includes(searchTerm) ||
         (lead.telefone && lead.telefone.includes(searchTerm))
@@ -224,7 +225,7 @@ const Leads = () => {
                   {filteredLeads.length} de {leads.length} leads
                 </CardDescription>
               </div>
-              
+
               <div className="flex flex-col sm:flex-row gap-4">
                 <Input
                   placeholder="Buscar por nome, CNPJ ou telefone..."
@@ -232,7 +233,7 @@ const Leads = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full sm:w-80"
                 />
-                
+
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-full sm:w-40">
                     <SelectValue placeholder="Status" />
@@ -246,7 +247,7 @@ const Leads = () => {
               </div>
             </div>
           </CardHeader>
-          
+
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
@@ -272,7 +273,7 @@ const Leads = () => {
                 </TableHeader>
                 <TableBody>
                   {paginatedLeads.map((lead) => (
-                    <TableRow 
+                    <TableRow
                       key={lead.id}
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => fetchLeadDetails(lead.id)}
@@ -286,18 +287,17 @@ const Leads = () => {
                         {lead.endereco || '-'}
                       </TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          lead.status === 'novo' 
-                            ? 'bg-blue-100 text-blue-800' 
-                            : lead.status === 'em_validacao'
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${lead.status === 'novo'
+                          ? 'bg-blue-100 text-blue-800'
+                          : lead.status === 'em_validacao'
                             ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-gray-100 text-gray-800'
-                        }`}>
+                          }`}>
                           {lead.status || 'Novo'}
                         </span>
                       </TableCell>
                       <TableCell>
-                        {lead.data_criacao 
+                        {lead.data_criacao
                           ? new Date(lead.data_criacao).toLocaleDateString('pt-BR')
                           : '-'
                         }
@@ -305,8 +305,8 @@ const Leads = () => {
                       <TableCell>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               variant="outline"
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -324,7 +324,12 @@ const Leads = () => {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => moveToNegociacao(lead.id)}>
+                              <AlertDialogAction
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveToNegociacao(lead.id);
+                                }}
+                              >
                                 Confirmar
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -367,8 +372,8 @@ const Leads = () => {
             {filteredLeads.length === 0 && (
               <div className="text-center py-8">
                 <p className="text-muted-foreground">
-                  {searchTerm || statusFilter !== 'all' 
-                    ? 'Nenhum lead encontrado com os filtros aplicados.' 
+                  {searchTerm || statusFilter !== 'all'
+                    ? 'Nenhum lead encontrado com os filtros aplicados.'
                     : 'Nenhum lead encontrado.'
                   }
                 </p>
@@ -377,7 +382,7 @@ const Leads = () => {
           </CardContent>
         </Card>
 
-        <LeadDetailModal 
+        <LeadDetailModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           lead={selectedLead}
