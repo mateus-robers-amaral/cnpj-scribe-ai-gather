@@ -58,7 +58,6 @@ const Leads = () => {
       const { data, error } = await supabase
         .from('leads')
         .select('*')
-        .not('status', 'in', '(em_negociacao,finalizado)')
         .order('data_criacao', { ascending: sortOrder === 'asc' });
 
       if (error) throw error;
@@ -127,14 +126,6 @@ const Leads = () => {
 
   const moveToNegociacao = async (leadId: string) => {
     try {
-      // Atualiza o status no Supabase (sem deletar o lead)
-      const { error: updateError } = await supabase
-        .from('leads')
-        .update({ status: 'em_negociacao' })
-        .eq('id', leadId);
-
-      if (updateError) throw updateError;
-
       // Insere o registro em 'negociacoes'
       const { error: insertError } = await supabase
         .from('negociacoes')
@@ -146,13 +137,21 @@ const Leads = () => {
 
       if (insertError) throw insertError;
 
+      // Remove o lead da tabela 'leads'
+      const { error: deleteError } = await supabase
+        .from('leads')
+        .delete()
+        .eq('id', leadId);
+
+      if (deleteError) throw deleteError;
+
       toast({
         title: 'Sucesso',
         description: 'Lead movido para negociação com sucesso!',
       });
 
       // Atualiza lista visual
-      setLeads((prev) => prev.filter((l) => l.id !== leadId));
+      fetchLeads();
     } catch (error: unknown) {
       const typedError = error as { message?: string };
       console.error('Erro ao mover lead para negociação:', typedError);
@@ -162,6 +161,12 @@ const Leads = () => {
         variant: 'destructive',
       });
     }
+  };
+
+  const handleLeadUpdated = () => {
+    fetchLeads();
+    setIsModalOpen(false);
+    setSelectedLead(null);
   };
 
   useEffect(() => {
@@ -386,6 +391,7 @@ const Leads = () => {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           lead={selectedLead}
+          onLeadUpdated={handleLeadUpdated}
         />
       </div>
     </div>
