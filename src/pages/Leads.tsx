@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, ArrowUpDown, ArrowRight } from 'lucide-react';
+import { Loader2, ArrowUpDown, ArrowRight, Plus } from 'lucide-react';
 import LeadDetailModal from '@/components/LeadDetailModal';
+import CreateLeadModal from '@/components/CreateLeadModal';
 
 interface Lead {
   id: string;
@@ -51,6 +51,7 @@ const Leads = () => {
   const [itemsPerPage] = useState(50);
   const [selectedLead, setSelectedLead] = useState<DetailedLead | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchLeads = async () => {
@@ -232,6 +233,14 @@ const Leads = () => {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-4">
+                <Button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  Cadastrar Lead
+                </Button>
+
                 <Input
                   placeholder="Buscar por nome, CNPJ ou telefone..."
                   value={searchTerm}
@@ -392,6 +401,12 @@ const Leads = () => {
           onClose={() => setIsModalOpen(false)}
           lead={selectedLead}
           onLeadUpdated={handleLeadUpdated}
+        />
+
+        <CreateLeadModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onLeadCreated={fetchLeads}
         />
       </div>
     </div>
