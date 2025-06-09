@@ -74,16 +74,41 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     if (!lead) return;
 
     try {
-      const { error } = await supabase
+      // 1. Excluir registros relacionados em negociacoes
+      const { error: negociacoesError } = await supabase
+        .from('negociacoes')
+        .delete()
+        .eq('lead_id', lead.id);
+
+      if (negociacoesError) throw negociacoesError;
+
+      // 2. Excluir registros relacionados em validacoes
+      const { error: validacoesError } = await supabase
+        .from('validacoes')
+        .delete()
+        .eq('lead_id', lead.id);
+
+      if (validacoesError) throw validacoesError;
+
+      // 3. Excluir registros relacionados em finalizados
+      const { error: finalizadosError } = await supabase
+        .from('finalizados')
+        .delete()
+        .eq('lead_id', lead.id);
+
+      if (finalizadosError) throw finalizadosError;
+
+      // 4. Excluir o lead principal
+      const { error: leadError } = await supabase
         .from('leads')
         .delete()
         .eq('id', lead.id);
 
-      if (error) throw error;
+      if (leadError) throw leadError;
 
       toast({
         title: 'Sucesso',
-        description: 'Lead excluído com sucesso!',
+        description: 'Lead e todos os registros relacionados foram excluídos com sucesso!',
       });
 
       if (onLeadUpdated) onLeadUpdated();
@@ -92,7 +117,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       console.error('Erro ao excluir lead:', error);
       toast({
         title: 'Erro',
-        description: 'Erro ao excluir lead.',
+        description: 'Erro ao excluir lead e registros relacionados.',
         variant: 'destructive',
       });
     }
@@ -127,7 +152,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Tem certeza que deseja excluir este lead? Esta ação não pode ser desfeita.
+                        Tem certeza que deseja excluir este lead? Esta ação irá remover o lead e todos os registros relacionados (validações, negociações e finalizações). Esta ação não pode ser desfeita.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
