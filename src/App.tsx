@@ -10,6 +10,7 @@ import Leads from "./pages/Leads";
 import Negociando from "./pages/Negociando";
 import Finalizados from "./pages/Finalizados";
 import SalesDashboard from "./pages/SalesDashboard";
+import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,7 +23,8 @@ const App = () => (
       <BrowserRouter>
         <Navigation />
         <Routes>
-          <Route path="/" element={<Index />} />
+          <Route path="/" element={<SalesDashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/negociando" element={<Negociando />} />
           <Route path="/finalizados" element={<Finalizados />} />
